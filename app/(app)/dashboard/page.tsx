@@ -79,7 +79,7 @@ export default function DashboardPage() {
   }, {});
 
   const categoryDistribution = Object.entries(categoryCounts).map(([name, value]) => ({
-    name,
+    label: name,
     value,
   }));
 
