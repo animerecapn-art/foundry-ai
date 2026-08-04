@@ -85,8 +85,8 @@ export default function DashboardPage() {
 
   // Activity chart data based on actual ideas created per month
   const chartData = [
-    { name: 'Jul', ideas: 1, checks: 0 },
-    { name: 'Aug', ideas: ideas.length, checks: Math.min(ideas.length, 3) },
+    { date: 'Jul', ideas: 1, checks: 0 },
+    { date: 'Aug', ideas: ideas.length, checks: Math.min(ideas.length, 3) },
   ];
 
   return (
