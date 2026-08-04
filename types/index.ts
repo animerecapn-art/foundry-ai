@@ -24,6 +24,7 @@ export interface Tag {
 
 export interface Idea {
   id: string;
+  userId: string;
   title: string;
   description: string;
   status: IdeaStatus;
