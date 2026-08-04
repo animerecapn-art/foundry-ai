@@ -41,6 +41,7 @@ export interface Idea {
   launchProgress: number; // 0-100
   checklistCompleted: number;
   checklistTotal: number;
+  notes?: string;
 }
 
 export interface IdeaVersion {
