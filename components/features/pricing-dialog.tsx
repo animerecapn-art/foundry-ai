@@ -7,7 +7,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useAppStore } from '@/store/app-store';
 
@@ -26,31 +25,101 @@ export function PricingDialog() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      // Check if already loaded
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handleUpgrade = async () => {
     if (!user) return;
     setLoading(true);
 
     try {
-      // Simulate Stripe/payment gateway redirection and response
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // 1. Load Razorpay script dynamically
+      const isScriptLoaded = await loadRazorpayScript();
+      if (!isScriptLoaded) {
+        throw new Error('Razorpay SDK failed to load. Please check your internet connection.');
+      }
 
-      // Update user plan in Supabase profiles database
-      const { error } = await supabase
-        .from('profiles')
-        .update({ plan: 'pro', updated_at: new Date().toISOString() })
-        .eq('id', user.id);
+      // 2. Create order on backend
+      const response = await fetch('/api/razorpay/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-      if (error) throw error;
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to initialize payment order');
+      }
 
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        setUpgradeDialogOpen(false);
-        window.location.reload(); // Reload to refresh all profile states/badges in UI
-      }, 2500);
-    } catch (err) {
-      console.error('Failed to upgrade plan:', err);
-    } finally {
+      // 3. Configure Razorpay checkout options
+      const options = {
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency,
+        name: 'FoundryAI',
+        description: 'Upgrade to Pro Plan (Premium Access)',
+        order_id: data.orderId,
+        handler: async function (response: any) {
+          setLoading(true);
+          try {
+            // 4. Verify payment signature on backend
+            const verifyResponse = await fetch('/api/razorpay/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+
+            const verifyData = await verifyResponse.json();
+            if (!verifyResponse.ok) {
+              throw new Error(verifyData.error || 'Payment signature verification failed');
+            }
+
+            // Upgraded successfully! Show success screen
+            setSuccess(true);
+            setTimeout(() => {
+              setSuccess(false);
+              setUpgradeDialogOpen(false);
+              window.location.reload(); // Reload page to update UI state and badges
+            }, 2500);
+          } catch (err: any) {
+            alert(err.message || 'Payment verification failed');
+          } finally {
+            setLoading(false);
+          }
+        },
+        prefill: {
+          email: user.email || '',
+        },
+        theme: {
+          color: '#8b5cf6', // Brand violet color matching FoundryAI design
+        },
+        modal: {
+          ondismiss: function () {
+            setLoading(false);
+          },
+        },
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.open();
+    } catch (err: any) {
+      alert(err.message || 'Payment initiation failed');
       setLoading(false);
     }
   };
@@ -86,7 +155,7 @@ export function PricingDialog() {
               <div className="my-6 text-center rounded-2xl bg-muted/50 border py-5 border-border/60">
                 <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Pro Plan Access</p>
                 <div className="flex items-baseline justify-center gap-1 mt-2">
-                  <span className="text-4xl font-display font-bold tracking-tight">$19</span>
+                  <span className="text-4xl font-display font-bold tracking-tight">₹1,599</span>
                   <span className="text-muted-foreground text-sm font-medium">/ month</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Cancel anytime. 7-day money-back guarantee.</p>
@@ -115,7 +184,7 @@ export function PricingDialog() {
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Processing Payment...
+                    Initializing Checkout...
                   </>
                 ) : (
                   <>
