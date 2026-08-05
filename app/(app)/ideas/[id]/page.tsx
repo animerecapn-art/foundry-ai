@@ -1,22 +1,131 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, GitBranch, Calendar, Tag, Brain, Rocket, CheckSquare, Clock } from 'lucide-react';
+import { ArrowLeft, GitBranch, Calendar, Brain, Rocket, CheckSquare, Clock, Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { ProgressRing } from '@/components/shared/progress-ring';
-import { mockIdeas, mockRealityChecks, mockChecklistCategories } from '@/lib/mock-data';
-import { cn, formatDate, getStatusColor, getStageLabel, getScoreColor } from '@/lib/utils';
+import { mockChecklistCategories } from '@/lib/mock-data';
+import { cn, formatDate, getStatusColor, getStageLabel } from '@/lib/utils';
+import { getIdeaById, updateIdea } from '@/services/ideas';
+import { supabase } from '@/lib/supabase/client';
+import type { Idea } from '@/types';
 
 export default function IdeaDetailPage() {
   const params = useParams();
-  const idea = mockIdeas.find(i => i.id === params.id) || mockIdeas[0];
-  const realityCheck = mockRealityChecks.find(r => r.ideaId === idea.id);
+  const router = useRouter();
+  const [idea, setIdea] = useState<Idea | null>(null);
+  const [realityCheck, setRealityCheck] = useState<any>(null);
+  const [checklist, setChecklist] = useState(mockChecklistCategories);
+  const [loading, setLoading] = useState(true);
+  const [runningCheck, setRunningCheck] = useState(false);
+  const [launching, setLaunching] = useState(false);
+
+  const fetchDetails = async () => {
+    try {
+      const ideaId = params.id as string;
+      const data = await getIdeaById(ideaId);
+      if (data) {
+        setIdea(data);
+
+        // Fetch latest reality check
+        const { data: checkData } = await supabase
+          .from('reality_checks')
+          .select('*')
+          .eq('idea_id', ideaId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        setRealityCheck(checkData);
+
+        // Load checklist progress from localStorage
+        const stored = localStorage.getItem(`checklist-${ideaId}`);
+        if (stored) {
+          try {
+            setChecklist(JSON.parse(stored));
+          } catch (e) {
+            console.error('Failed to parse checklist state:', e);
+            setChecklist(mockChecklistCategories);
+          }
+        } else {
+          setChecklist(mockChecklistCategories);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDetails();
+  }, [params.id]);
+
+  const handleRunCheck = async () => {
+    if (!idea) return;
+    try {
+      setRunningCheck(true);
+      const res = await fetch('/api/reality-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ideaId: idea.id,
+          title: idea.title,
+          description: idea.description,
+          category: idea.category,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Check failed');
+
+      // Refresh detail data
+      await fetchDetails();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRunningCheck(false);
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!idea) return;
+    try {
+      setLaunching(true);
+      await updateIdea(idea.id, { status: 'launched', stage: 'growth' });
+      await fetchDetails();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!idea) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Idea not found</p>
+        <Link href="/ideas">
+          <Button className="mt-4">Back to Ideas</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-8 max-w-5xl">
@@ -38,7 +147,7 @@ export default function IdeaDetailPage() {
               <Badge variant="outline">
                 {getStageLabel(idea.stage)}
               </Badge>
-              {idea.tags.map(tag => (
+              {idea.tags && idea.tags.map(tag => (
                 <span
                   key={tag.id}
                   className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
@@ -56,13 +165,25 @@ export default function IdeaDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Brain className="w-4 h-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={handleRunCheck}
+              disabled={runningCheck}
+            >
+              {runningCheck ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
               Run AI Check
             </Button>
-            <Button variant="gradient" size="sm" className="gap-2">
-              <Rocket className="w-4 h-4" />
-              Launch
+            <Button
+              variant="gradient"
+              size="sm"
+              className="gap-2"
+              onClick={handleLaunch}
+              disabled={launching || idea.status === 'launched'}
+            >
+              {launching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+              {idea.status === 'launched' ? 'Launched' : 'Launch'}
             </Button>
           </div>
         </div>
@@ -71,10 +192,10 @@ export default function IdeaDetailPage() {
       {/* Score Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Reality Score', value: idea.realityScore },
-          { label: 'Market Fit', value: idea.marketScore },
-          { label: 'Uniqueness', value: idea.uniquenessScore },
-          { label: 'Feasibility', value: idea.feasibilityScore },
+          { label: 'Reality Score', value: idea.realityScore || 0 },
+          { label: 'Market Fit', value: idea.marketScore || 0 },
+          { label: 'Uniqueness', value: idea.uniquenessScore || 0 },
+          { label: 'Feasibility', value: idea.feasibilityScore || 0 },
         ].map((score, index) => (
           <motion.div
             key={score.label}
@@ -118,7 +239,7 @@ export default function IdeaDetailPage() {
                 <div className="flex items-center gap-2 mb-3">
                   {['Concept', 'Validation', 'MVP', 'Growth', 'Scale'].map((stage, i) => {
                     const stageMap: Record<string, number> = { concept: 0, validation: 1, mvp: 2, growth: 3, scale: 4 };
-                    const current = stageMap[idea.stage];
+                    const current = stageMap[idea.stage] !== undefined ? stageMap[idea.stage] : 0;
                     return (
                       <div key={stage} className="flex-1 flex flex-col items-center gap-1">
                         <div className={cn('w-full h-1.5 rounded-full', i <= current ? 'bg-primary' : 'bg-muted')} />
@@ -136,10 +257,10 @@ export default function IdeaDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between mb-2">
-                  <span className="text-3xl font-display font-bold">{idea.launchProgress}%</span>
-                  <span className="text-xs text-muted-foreground">{idea.checklistCompleted}/{idea.checklistTotal} tasks</span>
+                  <span className="text-3xl font-display font-bold">{idea.launchProgress || 0}%</span>
+                  <span className="text-xs text-muted-foreground">{idea.checklistCompleted || 0}/{idea.checklistTotal || 25} tasks</span>
                 </div>
-                <Progress value={idea.launchProgress} className="h-2" />
+                <Progress value={idea.launchProgress || 0} className="h-2" />
               </CardContent>
             </Card>
           </div>
@@ -154,7 +275,7 @@ export default function IdeaDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-2">
-                    {realityCheck.insights.map((insight, i) => (
+                    {realityCheck.insights && realityCheck.insights.map((insight: string, i: number) => (
                       <li key={i} className="flex items-start gap-2 text-sm">
                         <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                         {insight}
@@ -170,7 +291,7 @@ export default function IdeaDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-2">
-                      {realityCheck.risks.map((risk, i) => (
+                      {realityCheck.risks && realityCheck.risks.map((risk: string, i: number) => (
                         <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
                           <div className="w-1 h-1 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
                           {risk}
@@ -185,7 +306,7 @@ export default function IdeaDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-2">
-                      {realityCheck.opportunities.map((opp, i) => (
+                      {realityCheck.opportunities && realityCheck.opportunities.map((opp: string, i: number) => (
                         <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
                           <div className="w-1 h-1 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
                           {opp}
@@ -201,8 +322,9 @@ export default function IdeaDetailPage() {
               <Brain className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
               <p className="font-medium">No AI analysis yet</p>
               <p className="text-sm text-muted-foreground mt-1">Run an AI Reality Check to get insights</p>
-              <Button variant="gradient" className="mt-4 gap-2">
-                <Brain className="w-4 h-4" /> Run AI Check
+              <Button variant="gradient" className="mt-4 gap-2" onClick={handleRunCheck} disabled={runningCheck}>
+                {runningCheck ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+                Run AI Check
               </Button>
             </Card>
           )}
@@ -212,7 +334,7 @@ export default function IdeaDetailPage() {
           <Card>
             <CardContent className="p-6">
               <div className="space-y-4">
-                {Array.from({ length: idea.version }, (_, i) => idea.version - i).map((v) => (
+                {Array.from({ length: idea.version || 1 }, (_, i) => (idea.version || 1) - i).map((v) => (
                   <div key={v} className="flex items-center gap-4 rounded-lg border border-border/50 p-4">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
                       v{v}
@@ -233,7 +355,7 @@ export default function IdeaDetailPage() {
 
         <TabsContent value="launch" className="mt-6">
           <div className="space-y-4">
-            {mockChecklistCategories.slice(0, 3).map((cat) => (
+            {checklist.slice(0, 3).map((cat) => (
               <Card key={cat.id}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">

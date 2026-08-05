@@ -2,19 +2,18 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Archive, Search, RotateCcw, Trash2, Filter } from 'lucide-react';
+import { Archive, Search, RotateCcw, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { ProgressRing } from '@/components/shared/progress-ring';
 import { EmptyState } from '@/components/shared/empty-state';
-import { mockIdeas } from '@/lib/mock-data';
-import { cn, formatDate, getStatusColor } from '@/lib/utils';
+import { useArchivedIdeas } from '@/hooks/use-ideas';
+import { cn, formatDate } from '@/lib/utils';
 
 export default function VaultPage() {
   const [search, setSearch] = useState('');
-  const archivedIdeas = mockIdeas.filter(i => i.status === 'archived');
+  const { ideas: archivedIdeas, isLoading, restore, remove } = useArchivedIdeas();
 
   const displayed = search
     ? archivedIdeas.filter(i => i.title.toLowerCase().includes(search.toLowerCase()))
@@ -30,7 +29,7 @@ export default function VaultPage() {
           <h1 className="font-display text-2xl font-bold">Idea Vault</h1>
         </div>
         <p className="text-muted-foreground text-sm">
-          {archivedIdeas.length} archived ideas stored safely
+          {archivedIdeas.length} archived {archivedIdeas.length === 1 ? 'idea' : 'ideas'} stored safely
         </p>
       </motion.div>
 
@@ -56,7 +55,11 @@ export default function VaultPage() {
         </div>
       </div>
 
-      {displayed.length === 0 ? (
+      {isLoading ? (
+        <div className="flex justify-center items-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      ) : displayed.length === 0 ? (
         <EmptyState
           icon="vault"
           title="Vault is empty"
@@ -85,10 +88,10 @@ export default function VaultPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="outline" size="icon-sm" className="h-7 w-7">
+                <Button variant="outline" size="icon-sm" className="h-7 w-7" onClick={() => restore(idea.id)}>
                   <RotateCcw className="w-3.5 h-3.5" />
                 </Button>
-                <Button variant="outline" size="icon-sm" className="h-7 w-7 text-destructive hover:bg-destructive hover:text-white">
+                <Button variant="outline" size="icon-sm" className="h-7 w-7 text-destructive hover:bg-destructive hover:text-white" onClick={() => remove(idea.id)}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               </div>

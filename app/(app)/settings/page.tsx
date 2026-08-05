@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
-  User, Bell, CreditCard, Palette, Shield, ChevronRight, Save,
-  Moon, Sun, Monitor, Check
+  User, Bell, CreditCard, Palette, Save,
+  Moon, Sun, Monitor, Check, Loader2
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { mockUser } from '@/lib/mock-data';
+import { useAuth } from '@/hooks/use-auth';
+import { supabase } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
 const themeOptions = [
@@ -33,12 +34,55 @@ const notifSettings = [
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { user, profile, isLoading } = useAuth();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    if (profile?.name) {
+      setName(profile.name);
+    } else if (user?.user_metadata?.full_name) {
+      setName(user.user_metadata.full_name);
+    } else if (user?.email) {
+      setName(user.email.split('@')[0]);
+    }
+    if (user?.email) {
+      setEmail(user.email);
+    }
+  }, [user, profile]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    try {
+      setSaving(true);
+      const { error } = await supabase
+        .from('profiles')
+        .update({ name })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const plan = profile?.plan || 'free';
+  const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url;
+  const initials = name ? name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U';
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-8 max-w-3xl">
@@ -75,9 +119,9 @@ export default function SettingsPage() {
             <CardContent className="space-y-5">
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src={mockUser.avatar} />
-                  <AvatarFallback className="text-xl">
-                    {mockUser.name.split(' ').map(n => n[0]).join('')}
+                  <AvatarImage src={avatarUrl} />
+                  <AvatarFallback className="text-xl bg-brand-gradient text-white">
+                    {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div>
@@ -89,11 +133,11 @@ export default function SettingsPage() {
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Full Name</label>
-                  <Input defaultValue={mockUser.name} />
+                  <Input value={name} onChange={e => setName(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Email</label>
-                  <Input type="email" defaultValue={mockUser.email} />
+                  <Input type="email" value={email} disabled className="bg-muted" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -104,8 +148,8 @@ export default function SettingsPage() {
                 <label className="text-sm font-medium">Website</label>
                 <Input placeholder="https://yourwebsite.com" />
               </div>
-              <Button variant="gradient" onClick={handleSave} className="gap-2">
-                {saved ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> Save changes</>}
+              <Button variant="gradient" onClick={handleSave} className="gap-2" disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> Save changes</>}
               </Button>
             </CardContent>
           </Card>
@@ -173,20 +217,37 @@ export default function SettingsPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-display font-semibold">Pro Plan</h3>
+                    <h3 className="font-display font-semibold">
+                      {plan === 'free' ? 'Free Plan' : plan === 'pro' ? 'Pro Plan' : 'Enterprise Plan'}
+                    </h3>
                     <Badge variant="default">Current</Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">$19/month · Renews January 1, 2025</p>
+                  <p className="text-sm text-muted-foreground">
+                    {plan === 'free' ? 'Basic tools to validate concepts' : '$19/month · Renews January 1, 2027'}
+                  </p>
                   <ul className="mt-3 space-y-1.5">
-                    {['Unlimited AI reality checks', 'Unlimited reports', 'Priority support', 'Early access features'].map(f => (
-                      <li key={f} className="flex items-center gap-2 text-sm">
-                        <Check className="w-3.5 h-3.5 text-emerald-500" />
-                        {f}
-                      </li>
-                    ))}
+                    {plan === 'free' ? (
+                      ['5 AI reality checks limit', 'Basic checklist support', 'Standard support'].map(f => (
+                        <li key={f} className="flex items-center gap-2 text-sm">
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          {f}
+                        </li>
+                      ))
+                    ) : (
+                      ['Unlimited AI reality checks', 'Unlimited reports', 'Priority support', 'Early access features'].map(f => (
+                        <li key={f} className="flex items-center gap-2 text-sm">
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          {f}
+                        </li>
+                      ))
+                    )}
                   </ul>
                 </div>
-                <Button variant="outline" size="sm">Manage Plan</Button>
+                {plan === 'free' ? (
+                  <Button variant="gradient" size="sm">Upgrade to Pro</Button>
+                ) : (
+                  <Button variant="outline" size="sm">Manage Plan</Button>
+                )}
               </div>
             </CardContent>
           </Card>
