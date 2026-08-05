@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build-time' });
-
 const REALITY_CHECK_PROMPT = `You are a senior startup advisor with expertise in market analysis, competitive landscapes, and business feasibility.
 
 Analyze the following startup idea and return a detailed JSON assessment. Be honest and critical — founders need accurate information to make decisions.
@@ -32,6 +30,9 @@ Scoring guide:
 
 export async function POST(request: NextRequest) {
   try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    // Verify authentication
     const supabase = await createServerSupabaseClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
