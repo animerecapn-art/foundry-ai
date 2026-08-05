@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,7 +25,7 @@ const features = [
   { icon: Rocket, text: 'Track idea to launch journey' },
 ];
 
-export default function LoginPage() {
+function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectedFrom = searchParams.get('redirectedFrom') || '/dashboard';
@@ -65,12 +65,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex w-full">
       {/* Left – Brand Panel */}
       <div className="hidden lg:flex lg:flex-1 relative overflow-hidden bg-gradient-to-br from-[hsl(262,70%,15%)] via-[hsl(240,60%,12%)] to-[hsl(220,70%,8%)]">
         <div className="absolute top-1/4 left-1/3 w-64 h-64 rounded-full bg-primary/20 blur-[80px]" />
         <div className="absolute bottom-1/4 right-1/4 w-48 h-48 rounded-full bg-blue-500/15 blur-[60px]" />
-        <div className="relative z-10 flex flex-col justify-center px-12 py-16 text-white">
+        <div className="relative z-10 flex flex-col justify-center px-12 py-16 text-white w-full">
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium mb-8 backdrop-blur-sm">
               <Zap className="w-3 h-3" />
@@ -94,7 +94,7 @@ export default function LoginPage() {
               </div>
             ))}
           </motion.div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.4 }} className="mt-16 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.4 }} className="mt-16 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm max-w-md">
             <p className="text-sm text-white/80 italic leading-relaxed">
               &ldquo;FoundryAI saved me 3 months and $40K by validating my idea&apos;s market size before I hired a team.&rdquo;
             </p>
@@ -110,7 +110,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right – Login Form */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 lg:px-12">
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 lg:px-12 bg-background">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-sm">
           <div className="mb-8">
             <h2 className="font-display text-2xl font-bold">Welcome back</h2>
@@ -177,5 +177,18 @@ export default function LoginPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground text-sm">
+        <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin mr-2" />
+        Loading workspace...
+      </div>
+    }>
+      <LoginFormContent />
+    </Suspense>
   );
 }
