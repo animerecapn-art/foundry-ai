@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build-time' });
 
 const REALITY_CHECK_PROMPT = `You are a senior startup advisor with expertise in market analysis, competitive landscapes, and business feasibility.
 
