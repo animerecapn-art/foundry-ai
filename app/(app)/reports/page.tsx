@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase/client';
 import { cn, formatRelativeTime, getScoreColor } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 const reportTypeLabels: Record<string, string> = {
   'reality-check': 'Reality Check',
@@ -26,6 +27,7 @@ const reportTypeColors: Record<string, string> = {
 export default function ReportsPage() {
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     async function loadReports() {
@@ -109,6 +111,7 @@ export default function ReportsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.08 }}
               whileHover={{ y: -2 }}
+              onClick={() => router.push(`/ideas/${report.ideaId}?tab=analysis`)}
               className="group rounded-xl border bg-card shadow-card hover:shadow-card-hover transition-all overflow-hidden cursor-pointer"
             >
               {/* Color accent based on type */}
@@ -161,10 +164,10 @@ export default function ReportsPage() {
 
                 {report.status === 'ready' && (
                   <div className="flex items-center gap-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs">
+                    <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs" onClick={(e) => { e.stopPropagation(); router.push(`/ideas/${report.ideaId}?tab=analysis`); }}>
                       <Eye className="w-3 h-3" /> View
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs">
+                    <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs" onClick={(e) => e.stopPropagation()}>
                       <Download className="w-3 h-3" /> Export PDF
                     </Button>
                   </div>

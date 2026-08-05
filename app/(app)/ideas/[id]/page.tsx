@@ -26,6 +26,17 @@ export default function IdeaDetailPage() {
   const [loading, setLoading] = useState(true);
   const [runningCheck, setRunningCheck] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tab = searchParams.get('tab');
+      if (tab) {
+        setActiveTab(tab);
+      }
+    }
+  }, []);
 
   const fetchDetails = async () => {
     try {
@@ -212,7 +223,7 @@ export default function IdeaDetailPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analysis">AI Analysis</TabsTrigger>
