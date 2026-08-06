@@ -128,7 +128,7 @@ function LoginFormContent() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Email</label>
-              <Input type="email" placeholder="alex@company.com" {...register('email')} className={errors.email ? 'border-destructive' : ''} />
+              <Input type="email" placeholder="alex@company.com" {...register('email')} className={errors.email ? 'border-destructive' : ''} suppressHydrationWarning />
               {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
             </div>
             <div className="space-y-1.5">
@@ -136,7 +136,7 @@ function LoginFormContent() {
                 <label className="text-sm font-medium">Password</label>
                 <Link href="#" className="text-xs text-primary hover:underline">Forgot password?</Link>
               </div>
-              <Input type="password" placeholder="••••••••" {...register('password')} className={errors.password ? 'border-destructive' : ''} />
+              <Input type="password" placeholder="••••••••" {...register('password')} className={errors.password ? 'border-destructive' : ''} suppressHydrationWarning />
               {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
             <Button type="submit" variant="gradient" className="w-full mt-2" disabled={isSubmitting}>

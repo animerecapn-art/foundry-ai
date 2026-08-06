@@ -16,21 +16,22 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { IdeaFormDialog } from '@/components/features/idea-form-dialog';
 import { useIdeas } from '@/hooks/use-ideas';
 import { getDashboardStats } from '@/services/ideas';
 import { supabase } from '@/lib/supabase/client';
 import { getScoreColor } from '@/lib/utils';
 import type { Activity } from '@/types';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  const { ideas, addIdea, isLoading: ideasLoading } = useIdeas();
+  const router = useRouter();
+  const { ideas, isLoading: ideasLoading } = useIdeas();
   const [stats, setStats] = useState({ totalIdeas: 0, launchedIdeas: 0, averageScore: 0, reportsGenerated: 0 });
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [chartData, setChartData] = useState<any[]>([]);
 
-  // Fetch live stats and activities
+  // Fetch live stats, activities, and dynamic growth chart
   useEffect(() => {
     async function loadData() {
       try {
@@ -55,6 +56,45 @@ export default function DashboardPage() {
             createdAt: a.created_at
           })));
         }
+
+        // Fetch creation timestamps for dynamic chart grouping (last 6 months)
+        const { data: rawIdeas } = await supabase.from('ideas').select('created_at');
+        const { data: rawChecks } = await supabase.from('reality_checks').select('created_at');
+
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const last6Months = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          last6Months.push({
+            monthName: months[d.getMonth()] || '',
+            monthVal: d.getMonth(),
+            yearVal: d.getFullYear(),
+            ideas: 0,
+            checks: 0
+          });
+        }
+
+        if (rawIdeas) {
+          rawIdeas.forEach(ri => {
+            const cDate = new Date(ri.created_at);
+            const match = last6Months.find(m => m.monthVal === cDate.getMonth() && m.yearVal === cDate.getFullYear());
+            if (match) match.ideas++;
+          });
+        }
+        if (rawChecks) {
+          rawChecks.forEach(rc => {
+            const cDate = new Date(rc.created_at);
+            const match = last6Months.find(m => m.monthVal === cDate.getMonth() && m.yearVal === cDate.getFullYear());
+            if (match) match.checks++;
+          });
+        }
+
+        setChartData(last6Months.map(m => ({
+          date: m.monthName,
+          ideas: m.ideas,
+          checks: m.checks
+        })));
       } catch (err) {
         console.error('Failed to load dashboard data', err);
       } finally {
@@ -83,11 +123,24 @@ export default function DashboardPage() {
     value,
   }));
 
-  // Activity chart data based on actual ideas created per month
-  const chartData = [
-    { date: 'Jul', ideas: 1, checks: 0 },
-    { date: 'Aug', ideas: ideas.length, checks: Math.min(ideas.length, 3) },
-  ];
+  // Step 10: Empty State
+  if (!ideasLoading && ideas.length === 0) {
+    return (
+      <div className="max-w-lg mx-auto py-16 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-brand-gradient mx-auto flex items-center justify-center shadow-glow mb-6">
+          <Lightbulb className="w-8 h-8 text-white" />
+        </div>
+        <h2 className="font-display text-lg font-bold text-foreground">You haven&apos;t analyzed any startup ideas yet.</h2>
+        <p className="text-xs text-muted-foreground mt-2 px-8 leading-relaxed">
+          Get a comprehensive AI reality check report outlining feasibility, SWOT analysis, competitor mapping, and monetization plans for your startup ideas.
+        </p>
+        <Button variant="gradient" className="mt-6 gap-2" onClick={() => router.push('/reality-checks')}>
+          Analyze Your First Idea
+          <ArrowRight className="w-4 h-4" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-8">
@@ -103,7 +156,7 @@ export default function DashboardPage() {
             Here&apos;s what&apos;s happening across your idea portfolio today.
           </p>
         </div>
-        <Button variant="gradient" className="gap-2 shadow-glow-sm hidden sm:flex" onClick={() => setDialogOpen(true)}>
+        <Button variant="gradient" className="gap-2 shadow-glow-sm hidden sm:flex" onClick={() => router.push('/reality-checks')}>
           <Plus className="w-4 h-4" />
           New Idea
         </Button>
@@ -165,14 +218,16 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <AppAreaChart
-                data={chartData}
-                areas={[
-                  { key: 'ideas', color: 'hsl(262,70%,52%)', label: 'Ideas' },
-                  { key: 'checks', color: 'hsl(212,90%,55%)', label: 'Checks' },
-                ]}
-                height={200}
-              />
+              {chartData.length > 0 && (
+                <AppAreaChart
+                  data={chartData}
+                  areas={[
+                    { key: 'ideas', color: 'hsl(262,70%,52%)', label: 'Ideas' },
+                    { key: 'checks', color: 'hsl(212,90%,55%)', label: 'Checks' },
+                  ]}
+                  height={200}
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -190,7 +245,7 @@ export default function DashboardPage() {
               <Card className="p-8 text-center border-dashed">
                 <Lightbulb className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                 <p className="text-sm font-medium">No ideas yet</p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => setDialogOpen(true)}>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => router.push('/reality-checks')}>
                   Create Your First Idea
                 </Button>
               </Card>
@@ -274,13 +329,6 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
-
-      <IdeaFormDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onSubmit={async (values) => { await addIdea(values); }}
-        mode="create"
-      />
     </div>
   );
 }

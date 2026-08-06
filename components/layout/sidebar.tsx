@@ -143,25 +143,27 @@ export function Sidebar() {
 
       {/* New Idea Button */}
       <div className={cn('px-3 mb-4', sidebarCollapsed && 'px-2')}>
-        <Button
-          variant="gradient"
-          size={sidebarCollapsed ? 'icon' : 'default'}
-          className="w-full gap-2 shadow-glow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <AnimatePresence>
-            {!sidebarCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                className="overflow-hidden whitespace-nowrap"
-              >
-                New Idea
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </Button>
+        <Link href="/reality-checks" passHref asChild>
+          <Button
+            variant="gradient"
+            size={sidebarCollapsed ? 'icon' : 'default'}
+            className="w-full gap-2 shadow-glow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <AnimatePresence>
+              {!sidebarCollapsed && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  className="overflow-hidden whitespace-nowrap"
+                >
+                  New Idea
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </Button>
+        </Link>
       </div>
 
       {/* Main Nav */}

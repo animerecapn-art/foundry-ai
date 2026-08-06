@@ -42,6 +42,7 @@ export interface Idea {
   checklistCompleted: number;
   checklistTotal: number;
   notes?: string;
+  inputs?: IdeaInputs;
 }
 
 export interface IdeaVersion {
@@ -181,3 +182,35 @@ export interface TimeSeriesDataPoint {
   score?: number;
   [key: string]: string | number | undefined;
 }
+
+// ============================================================
+// AI Reality Check Structured Types
+// ============================================================
+
+export interface IdeaInputs {
+  oneLinePitch: string;
+  problem: string;
+  solution: string;
+  targetAudience: string;
+  businessModel: string;
+  country: string;
+  additionalNotes?: string;
+}
+
+export interface OpenAIReport {
+  realityScore: number;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  risks: string[];
+  opportunities: string[];
+  competitors: string[];
+  targetCustomers: string[];
+  monetization: string[];
+  mvpFeatures: string[];
+  marketingIdeas: string[];
+  launchRoadmap: string[];
+  investorOpinion: string;
+  finalVerdict: string;
+}
+

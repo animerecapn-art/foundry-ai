@@ -1,32 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import type { IdeaInputs, OpenAIReport } from '@/types';
 
 const REALITY_CHECK_PROMPT = `You are a senior startup advisor with expertise in market analysis, competitive landscapes, and business feasibility.
 
-Analyze the following startup idea and return a detailed JSON assessment. Be honest and critical — founders need accurate information to make decisions.
+Analyze the startup idea provided by the user. Be extremely honest, critical, and constructive. Founders need realistic, data-grounded assessments to avoid wasting time and resources.
 
-Return ONLY valid JSON with this exact structure:
+You MUST return ONLY valid JSON matching this exact structure:
 {
-  "overall_score": <0-100 integer>,
-  "market_score": <0-100 integer>,
-  "uniqueness_score": <0-100 integer>,
-  "feasibility_score": <0-100 integer>,
-  "market_size": "<estimated TAM, e.g. '$4.2B TAM'>",
-  "competition": "<one of: low | medium | high | very-high>",
-  "feasibility": "<one of: low | medium | high>",
-  "uniqueness": "<one of: low | medium | high>",
-  "insights": [<3-5 key market insights as strings>],
-  "risks": [<3-4 key risks as strings>],
-  "opportunities": [<3-4 growth opportunities as strings>],
-  "verdict": "<2-3 sentence honest summary verdict>"
+  "realityScore": <0-100 integer reflecting overall viability>,
+  "summary": "<a high-level executive summary of the startup and its viability>",
+  "strengths": [<3-5 key strengths as strings>],
+  "weaknesses": [<3-5 key weaknesses as strings>],
+  "risks": [<3-5 hidden risks or blindspots as strings>],
+  "opportunities": [<3-5 market opportunities or growth channels as strings>],
+  "competitors": [<3-5 key competitors or alternative solutions as strings>],
+  "targetCustomers": [<2-3 target customer segments or personas as strings>],
+  "monetization": [<2-3 viable revenue models or pricing ideas as strings>],
+  "mvpFeatures": [<3-5 core features recommended for the Minimum Viable Product as strings>],
+  "marketingIdeas": [<3-4 marketing or customer acquisition ideas as strings>],
+  "launchRoadmap": [<3-4 chronological roadmap phases or milestones as strings>],
+  "investorOpinion": "<a brief simulated paragraph of what a VC or angel investor would say about this idea>",
+  "finalVerdict": "<a 2-3 sentence final verdict and recommendation>"
 }
 
-Scoring guide:
-- overall_score: Weighted average of all factors, reflecting overall viability (0=terrible, 100=exceptional)
-- market_score: Size, growth, and accessibility of target market
-- uniqueness_score: Differentiation from existing solutions
-- feasibility_score: Technical and operational feasibility`;
+Do not return any markdown code blocks or surrounding text. Return only the raw JSON.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,83 +40,202 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { ideaId, title, description, category } = body;
+    const {
+      ideaId,
+      title, // Startup Name
+      oneLinePitch,
+      problem,
+      solution,
+      targetAudience,
+      businessModel,
+      country,
+      category, // Industry
+      stage,
+      additionalNotes,
+    } = body;
 
     if (!title) {
-      return NextResponse.json({ error: 'Idea title is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Startup Name is required' }, { status: 400 });
     }
 
-    let result;
+    // Assemble the structured inputs
+    const inputs: IdeaInputs = {
+      oneLinePitch: oneLinePitch || '',
+      problem: problem || '',
+      solution: solution || '',
+      targetAudience: targetAudience || '',
+      businessModel: businessModel || '',
+      country: country || '',
+      additionalNotes: additionalNotes || '',
+    };
+
+    // Determine target version
+    let targetVersion = 1;
+    let finalIdeaId = ideaId;
+
+    if (ideaId) {
+      const { data: existingIdea } = await supabase
+        .from('ideas')
+        .select('version')
+        .eq('id', ideaId)
+        .single();
+      
+      targetVersion = (existingIdea?.version || 1) + 1;
+    } else {
+      // If no ideaId, create a new idea record first in 'validating' status
+      const { data: newIdea, error: createError } = await supabase
+        .from('ideas')
+        .insert({
+          user_id: user.id,
+          title: title,
+          description: JSON.stringify(inputs),
+          category: category || 'Other',
+          stage: stage || 'concept',
+          status: 'validating',
+          version: 1,
+        })
+        .select()
+        .single();
+
+      if (createError) throw createError;
+      finalIdeaId = newIdea.id;
+      targetVersion = 1;
+    }
+
+    let result: OpenAIReport;
     let isSimulated = false;
 
     try {
-      // Try OpenAI first
+      // Call OpenAI
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: REALITY_CHECK_PROMPT },
           {
             role: 'user',
-            content: `Startup Idea Title: ${title}\nCategory: ${category || 'General'}\nDescription: ${description || 'No additional description provided.'}`,
+            content: `Startup Name: ${title}
+Industry: ${category || 'Other'}
+Stage: ${stage || 'concept'}
+Country: ${country || 'Global'}
+One-line Pitch: ${inputs.oneLinePitch}
+Problem: ${inputs.problem}
+Solution: ${inputs.solution}
+Target Audience: ${inputs.targetAudience}
+Business Model: ${inputs.businessModel}
+Additional Notes: ${inputs.additionalNotes}`,
           },
         ],
         response_format: { type: 'json_object' },
         temperature: 0.7,
-        max_tokens: 1500,
+        max_tokens: 2000,
       });
 
       const rawContent = completion.choices[0]?.message?.content;
       if (!rawContent) throw new Error('No response from OpenAI');
-      result = JSON.parse(rawContent);
+      result = JSON.parse(rawContent) as OpenAIReport;
     } catch (openaiError: any) {
-      console.warn('OpenAI call failed or quota exceeded, falling back to simulated reality check:', openaiError.message);
+      console.warn('OpenAI call failed, using simulated fallback:', openaiError.message);
       isSimulated = true;
 
-      // Generates simulated stats dynamically based on the input title length to keep it dynamic
-      const hash = title.length + (category?.length || 0);
-      const scoreBase = 65 + (hash % 20); // 65-85 score
+      // Simulated report generation based on inputs
+      const hash = title.length + (category?.length || 0) + (solution?.length || 0);
+      const scoreBase = 70 + (hash % 18); // 70-88 score
 
       result = {
-        overall_score: scoreBase,
-        market_score: scoreBase + (hash % 5) - 2,
-        uniqueness_score: scoreBase + (hash % 7) - 3,
-        feasibility_score: scoreBase - (hash % 4),
-        market_size: `$${(1.5 + (hash % 10) / 2).toFixed(1)}B TAM`,
-        competition: ['low', 'medium', 'high'][(hash % 3)] || 'medium',
-        feasibility: ['medium', 'high'][(hash % 2)] || 'high',
-        uniqueness: ['medium', 'high'][(hash % 2)] || 'medium',
-        insights: [
-          `Target customer segment represents a fast-growing market driven by digital adoption.`,
-          `Competitive mapping indicates key gaps in current B2B workflow solutions.`,
-          `Primary monetization model relies on low-friction usage tiers.`,
+        realityScore: scoreBase,
+        summary: `A comprehensive evaluation for "${title}" targeting the ${category || 'General'} industry. The model examines the outlined problem ("${inputs.problem.slice(0, 80)}...") and proposed solution to determine market viability.`,
+        strengths: [
+          `Addresses a high-friction problem in ${category || 'this sector'}.`,
+          `Solution leverages low-overhead implementation details.`,
+          `Target audience shows a high willingness to adopt workflow efficiency tools.`
+        ],
+        weaknesses: [
+          `Potential friction onboarding users who rely on manual habits.`,
+          `Competitive crowding in general software integrations.`,
+          `Reliance on high-touch early relationships for initial client retention.`
         ],
         risks: [
-          `Potential churn if integration with legacy workflows is friction-heavy.`,
-          `Customer acquisition costs (CAC) might scale faster than LTV early on.`,
+          `Customer Acquisition Costs (CAC) might escalate faster than Lifetime Value (LTV) early on.`,
+          `Security compliance bottlenecks in Enterprise segments.`,
+          `Product feature overlap with large suite providers.`
         ],
         opportunities: [
-          `Establish partnership channels with early adopter networks.`,
-          `Introduce custom automation presets to increase user retention.`,
+          `Establish direct referral loops within small builder communities.`,
+          `Integrate with popular workflow and messaging platforms (Slack, Notion).`,
+          `Offer custom template packs for niche sub-verticals.`
         ],
-        verdict: `A highly promising concept with strong fundamentals. Success will depend on executing a rapid MVP launch and onboarding initial test cohorts for early feedback.`,
+        competitors: [
+          `Legacy spreadsheets and email-based tracking.`,
+          `Niche point-solution software platforms.`,
+          `Generic AI conversational models providing static checklists.`
+        ],
+        targetCustomers: [
+          `Independent contractors and freelance professionals.`,
+          `Operations managers at high-growth teams (10-100 staff).`,
+          `Technology decision-makers in underserved regional markets.`
+        ],
+        monetization: [
+          `Standard subscription: $29/user/month billed annually.`,
+          `Free tier covering up to 3 active projects, unlocking premium features.`,
+          `Corporate packages including single sign-on (SSO) and dedicated support.`
+        ],
+        mvpFeatures: [
+          `Simple submission pipeline and analytics dashboard.`,
+          `Basic templated export for project metrics.`,
+          `Auto-alert workflow for target dates.`,
+          `Integration connectors for Google Workspace.`
+        ],
+        marketingIdeas: [
+          `Launch in private preview on Product Hunt and developer portals.`,
+          `Publish comparative case studies demonstrating actual hours saved.`,
+          `Co-host webinars with industry experts focusing on operational productivity.`
+        ],
+        launchRoadmap: [
+          `Phase 1: Build the submission portal and verify standard reports (2 weeks).`,
+          `Phase 2: Closed alpha test with 30 target users to evaluate UI/UX (3 weeks).`,
+          `Phase 3: Public beta with freemium tier and live onboarding (4 weeks).`,
+          `Phase 4: Launch premium integrations and corporate billing features (8 weeks).`
+        ],
+        investorOpinion: `This idea addresses a clear inefficiency. The monetization model is sensible and low-risk, but distribution will be the main challenge. If the team can prove a low payback period on CAC during beta, this represents an attractive early-stage investment.`,
+        finalVerdict: `A viable concept with a clear path to testing. We recommend building the core MVP immediately and recruiting 15 target users for a hands-on pilot to gather baseline retention metrics.`
       };
     }
+
+    // Prepare complete insights package to save in Supabase
+    // This stores: inputs, report data, version, and meta
+    const reportPackage = {
+      version: targetVersion,
+      date: new Date().toISOString(),
+      inputs: {
+        title,
+        oneLinePitch,
+        problem,
+        solution,
+        targetAudience,
+        businessModel,
+        country,
+        category,
+        stage,
+        additionalNotes,
+      },
+      report: result,
+    };
 
     // Save reality check to database
     const { data: savedCheck, error: saveError } = await supabase
       .from('reality_checks')
       .insert({
-        idea_id: ideaId,
+        idea_id: finalIdeaId,
         user_id: user.id,
-        overall_score: result.overall_score,
-        market_score: result.market_score,
-        uniqueness_score: result.uniqueness_score,
-        feasibility_score: result.feasibility_score,
-        market_size: result.market_size,
-        competition: result.competition,
-        feasibility: result.feasibility,
-        uniqueness: result.uniqueness,
-        insights: result.insights,
+        overall_score: result.realityScore,
+        market_score: result.realityScore,
+        uniqueness_score: result.realityScore,
+        feasibility_score: result.realityScore,
+        market_size: result.monetization[0] || 'N/A',
+        competition: 'medium',
+        feasibility: 'medium',
+        uniqueness: 'medium',
+        insights: reportPackage as any, // Stores the complete report package!
         risks: result.risks,
         opportunities: result.opportunities,
         model_used: isSimulated ? 'gpt-4o (Simulated Fallback)' : 'gpt-4o',
@@ -125,37 +243,48 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (saveError) console.error('Failed to save reality check:', saveError);
-
-    // Update the idea's scores in database
-    if (ideaId) {
-      await supabase
-        .from('ideas')
-        .update({
-          reality_score: result.overall_score,
-          market_score: result.market_score,
-          uniqueness_score: result.uniqueness_score,
-          feasibility_score: result.feasibility_score,
-          status: 'validated',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', ideaId)
-        .eq('user_id', user.id);
-
-      // Log activity
-      await supabase.from('activities').insert({
-        user_id: user.id,
-        idea_id: ideaId,
-        idea_title: title,
-        type: 'report_generated',
-        title: isSimulated ? 'Reality Check Complete (Simulated)' : 'Reality Check Complete',
-        description: `AI Reality Check for "${title}" scored ${result.overall_score}/100`,
-      });
+    if (saveError) {
+      console.error('Failed to save reality check:', saveError);
+      throw new Error(`Database error saving report: ${saveError.message}`);
     }
+
+    // Update the parent idea record: increment version, update scores, status
+    const { error: updateError } = await supabase
+      .from('ideas')
+      .update({
+        title: title,
+        description: JSON.stringify(inputs),
+        category: category || 'Other',
+        stage: stage || 'concept',
+        status: 'validated',
+        reality_score: result.realityScore,
+        market_score: result.realityScore,
+        uniqueness_score: result.realityScore,
+        feasibility_score: result.realityScore,
+        version: targetVersion,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', finalIdeaId)
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('Failed to update idea with check results:', updateError);
+    }
+
+    // Log activity
+    await supabase.from('activities').insert({
+      user_id: user.id,
+      idea_id: finalIdeaId,
+      idea_title: title,
+      type: 'report_generated',
+      title: isSimulated ? `v${targetVersion} Report Generated (Simulated)` : `v${targetVersion} Report Generated`,
+      description: `AI Reality Check for "${title}" scored ${result.realityScore}/100`,
+    });
 
     return NextResponse.json({
       success: true,
       checkId: savedCheck?.id,
+      ideaId: finalIdeaId,
       simulated: isSimulated,
       result,
     });
@@ -167,3 +296,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
